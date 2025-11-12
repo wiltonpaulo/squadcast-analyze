@@ -4,8 +4,6 @@ A lightweight, modular Python CLI tool to **fetch and analyze incident data from
 
 Built for DevOps and SRE teams who want to extract insights — top incidents, environment trends, service health, MTTR — directly from Squadcast exports.
 
----
-
 ## 🚀 Features
 
 - **Modular Python package** with clean CLI (using [Typer](https://typer.tiangolo.com/))
@@ -17,8 +15,6 @@ Built for DevOps and SRE teams who want to extract insights — top incidents, e
 - Optional support for:
   - `list-teams` — to inspect your available team IDs
   - `config set` — to edit `.env` values directly via CLI
-
----
 
 ## 🧩 Folder structure
 
@@ -41,8 +37,6 @@ squadcast-analyze/
 └── README.md
 ```
 
----
-
 ## ⚙️ Installation
 
 ```bash
@@ -58,8 +52,6 @@ source .venv/bin/activate
 pip install -e .
 ```
 
----
-
 ## 🔐 Configuration
 
 Create a `.env` file at the project root:
@@ -68,14 +60,12 @@ Create a `.env` file at the project root:
 REFRESH_TOKEN=your_refresh_token_here
 AUTH_URL=https://auth.squadcast.com/oauth/access-token
 BASE_API=https://api.squadcast.com/v3
-TEAM_ID=62b4349bdfe4d7b4809d7b5f
+TEAM_ID=<id>
 DEFAULT_START=2025-11-10T00:00:00.000Z
 DEFAULT_END=2025-11-12T23:59:59.999Z
 ```
 
 > 💡 You can generate a new `REFRESH_TOKEN` in Squadcast under your **API Integrations** page.
-
----
 
 ## 🧠 Usage
 
@@ -84,8 +74,6 @@ DEFAULT_END=2025-11-12T23:59:59.999Z
 squadcast-analyze auth
 ```
 > Prints an access token retrieved from your refresh token.
-
----
 
 ### 2️⃣ Fetch incidents
 ```bash
@@ -100,8 +88,6 @@ Results are saved under `data/raw/`, e.g.:
 ```
 data/raw/incidents_20251112T140906Z.json
 ```
-
----
 
 ### 3️⃣ Explore available fields
 ```bash
@@ -121,8 +107,6 @@ Available fields:
 Total fields: 39
 ```
 
----
-
 ### 4️⃣ Analyze top values
 ```bash
 # Top 10 by service
@@ -135,8 +119,6 @@ squadcast-analyze analyze   --input data/raw/incidents_20251112T140906Z.json   -
 squadcast-analyze analyze   --input data/raw/incidents_20251112T140906Z.json   --group-by priority   --top 10   --csv-out data/processed/top_priority.csv
 ```
 
----
-
 ## 🧰 Optional convenience commands
 
 If added to the CLI, you can use shorter aliases:
@@ -147,8 +129,6 @@ squadcast-analyze service --input ... --top 10
 squadcast-analyze priority --input ... --top 10
 squadcast-analyze env --input ... --top 10
 ```
-
----
 
 ## 🧪 Examples
 
