@@ -8,7 +8,7 @@ Built for DevOps and SRE teams who want to extract insights — top incidents, e
 
 - **Modular Python package** with clean CLI (using [Typer](https://typer.tiangolo.com/))
 - **Authentication** via refresh token (`X-Refresh-Token` → access token)
-- **Fetch incidents** with date and team filters
+- **Fetch incidents** with date, team and assignee filters
 - **Analyze** top counts by service, priority, environment, etc.
 - **List fields** dynamically (auto-detects JSON schema)
 - **Safe output** to local `data/raw` and `data/processed`
@@ -57,12 +57,14 @@ pip install -e .
 Create a `.env` file at the project root:
 
 ```ini
-REFRESH_TOKEN=your_refresh_token_here
-AUTH_URL=https://auth.squadcast.com/oauth/access-token
-BASE_API=https://api.squadcast.com/v3
-TEAM_ID=<id>
+SQUADCAST_REFRESH_TOKEN=your_refresh_token_here
+SQUADCAST_AUTH_URL=https://auth.squadcast.com/oauth/access-token
+SQUADCAST_BASE_API=https://api.squadcast.com/v3
+SQUADCAST_TEAM_ID=<id>
+SQUADCAST_ASSIGNEE_ID=<user_id>
 DEFAULT_START=2025-11-10T00:00:00.000Z
 DEFAULT_END=2025-11-12T23:59:59.999Z
+STATUS=Acknowledged
 ```
 
 > 💡 You can generate a new `REFRESH_TOKEN` in Squadcast under your **API Integrations** page.
@@ -77,12 +79,20 @@ squadcast-analyze auth
 
 ### 2️⃣ Fetch incidents
 ```bash
-squadcast-analyze fetch   --start 2025-11-10T00:00:00.000Z   --end   2025-11-12T23:59:59.999Z   --team 62b4349bdfe4d7b4809d7b5f   --type json
+squadcast-analyze fetch \
+    --start 2025-11-10T00:00:00.000Z \
+    --end 2025-11-12T23:59:59.999Z \
+    --team 62b4349bdfe4d7b4809d7b5f \
+    --assignee 67d1243a70e596040c5a4041 \
+    --type json
 ```
 
 Optional flags:
-- `--team none` → ignore TEAM_ID (fetch all)
-- `--debug` → show full URL and response preview
+- `--team none` → ignore TEAM_ID (fetch all).
+- `--assignee <user_id>` → fetch using assignee's user id.
+- `--tags 'alert_type=mem(k8)'` → filter for a specific tag.
+- `--status Acknowledged` → filter for status of the alert.
+- `--debug` → show full URL and response preview.
 
 Results are saved under `data/raw/`, e.g.:
 ```
@@ -110,13 +120,23 @@ Total fields: 39
 ### 4️⃣ Analyze top values
 ```bash
 # Top 10 by service
-squadcast-analyze analyze   --input data/raw/incidents_20251112T140906Z.json   --group-by service   --top 10
+squadcast-analyze analyze \
+    --input data/raw/incidents_20251112T140906Z.json \
+    --group-by service \
+    --top 10
 
 # Top 10 by environment alias
-squadcast-analyze analyze   --input data/raw/incidents_20251112T140906Z.json   --group-by env_alias   --top 10
+squadcast-analyze analyze \
+    --input data/raw/incidents_20251112T140906Z.json \
+    --group-by env_alias \
+    --top 10
 
 # Top 10 by priority
-squadcast-analyze analyze   --input data/raw/incidents_20251112T140906Z.json   --group-by priority   --top 10   --csv-out data/processed/top_priority.csv
+squadcast-analyze analyze \
+    --input data/raw/incidents_20251112T140906Z.json \
+    --group-by priority \
+    --top 10 \
+    --csv-out data/processed/top_priority.csv
 ```
 
 ## 🧰 Optional convenience commands

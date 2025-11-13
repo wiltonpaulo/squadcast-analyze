@@ -12,6 +12,8 @@ class Settings:
     auth_url: str
     base_api: str
     team_id: Optional[str] = None
+    assignee_id: Optional[str] = None
+    status: Optional[str] = None
     default_start: Optional[str] = None
     default_end: Optional[str] = None
 
@@ -35,6 +37,8 @@ def load_settings(env_path: str | None = ".env") -> Settings:
         auth_url=auth,
         base_api=base,
         team_id=os.getenv("SQUADCAST_TEAM_ID"),
+        assignee_id=os.getenv("SQUADCAST_ASSIGNEE_ID"),
+        status=os.getenv("STATUS"),
         default_start=os.getenv("START_TIME"),
         default_end=os.getenv("END_TIME"),
     )

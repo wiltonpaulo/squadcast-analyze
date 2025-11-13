@@ -39,9 +39,17 @@ def auth(env_path: Optional[str] = typer.Option(".env", help="Path to .env")):
 
 @app.command()
 def fetch(
+    # Main filters
     start: Optional[str] = typer.Option(None, help="ISO start time (UTC)"),
     end: Optional[str] = typer.Option(None, help="ISO end time (UTC)"),
+    tags: Optional[str] = typer.Option(None, help="Single Tag as key=value"),
+    status: Optional[str] = typer.Option(None, help="Status=Acknowledged"),
+
+    # Assignee filters
     team: Optional[str] = typer.Option(None, help="Owner/team id (owner_id)"),
+    assignee: Optional[str] = typer.Option(None, help="Assignee Id (assigned_to)"),
+
+    # Extras
     export_type: str = typer.Option("json", "--type", help="json or csv"),
     env_path: Optional[str] = typer.Option(".env", help="Path to .env"),
     debug: bool = typer.Option(False, help="Print debug info (URL, sample of payload)"),
@@ -59,6 +67,8 @@ def fetch(
         start_iso = start or settings.default_start
         end_iso = end or settings.default_end
         owner_id = team or settings.team_id  # pode ser None
+        assigned_to = assignee or settings.assignee_id
+        status = status or settings.status
 
         if not start_iso or not end_iso:
             raise typer.BadParameter("Provide --start/--end or set START_TIME/END_TIME in .env")
@@ -73,11 +83,17 @@ def fetch(
         )
         if owner_id:
             dbg_url += f"&owner_id={owner_id}"
+        if assigned_to:
+            dbg_url += f"&assigned_to={assigned_to}"
+        if tags:
+            dbg_url += f"&tags={tags}"
+        if status:
+            dbg_url += f"&status={status}"
         if debug:
             typer.secho(f"DEBUG URL: {dbg_url}", fg=typer.colors.YELLOW)
 
         content = client.export_incidents(
-            start_iso, end_iso, owner_id=owner_id, export_type=export_type
+            start_iso, end_iso, owner_id=owner_id, assigned_to=assigned_to, tags=tags, status=status, export_type=export_type
         )
         out = Path("data/raw") / (
             f"incidents_{utc_stamp()}.json" if export_type == "json" else f"incidents_{utc_stamp()}.csv"
