@@ -35,7 +35,7 @@ class SquadcastClient:
         if tags:
             url += f"&tags={tags}"
         if status:
-            status += f"&status={status}"
+            url += f"&status={status}"
 
         headers = {
             "Authorization": f"Bearer {self.access_token}",
