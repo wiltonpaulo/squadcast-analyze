@@ -15,6 +15,9 @@ class SquadcastClient:
         start_iso: str,
         end_iso: str,
         owner_id: Optional[str] = None,
+        assigned_to: Optional[str] = None,
+        tags: Optional[str] = None,
+        status: Optional[str] = None,
         export_type: Literal["json", "csv"] = "json",
     ) -> bytes:
         """
@@ -26,6 +29,13 @@ class SquadcastClient:
         )
         if owner_id:
             url += f"&owner_id={owner_id}"
+
+        if assigned_to:
+            url += f"&assigned_to={assigned_to}"
+        if tags:
+            url += f"&tags={tags}"
+        if status:
+            url += f"&status={status}"
 
         headers = {
             "Authorization": f"Bearer {self.access_token}",
