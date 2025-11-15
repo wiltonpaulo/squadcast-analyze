@@ -1,6 +1,6 @@
 from __future__ import annotations
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 import json
 import typer
 from tabulate import tabulate
@@ -17,7 +17,7 @@ app = typer.Typer(help="Squadcast Analyze CLI - fetch & analyze incidents")
 # ---------- helpers ----------
 def _err(msg: str, exit_code: int = 1) -> None:
     """Print a clean error (no traceback) and exit."""
-    # mostra só a primeira linha caso venha um payload longo
+    # shows only the first line in case of a long payload
     short = msg.splitlines()[0].strip()
     typer.secho(f"❌ {short}", fg=typer.colors.RED)
     raise typer.Exit(exit_code)
@@ -43,7 +43,15 @@ def fetch(
     start: Optional[str] = typer.Option(None, help="ISO start time (UTC)"),
     end: Optional[str] = typer.Option(None, help="ISO end time (UTC)"),
     tags: Optional[str] = typer.Option(None, help="Single Tag as key=value"),
-    status: Optional[str] = typer.Option(None, help="Status=acknowledged"),
+    status: List[str] = typer.Option(
+        None,
+        "--status",
+        "-s",
+        help=(
+            "Filter by one or more statuses, e.g. "
+            "--status acknowledged --status triggered or --status acknowledged,triggered"
+        ),
+    ),
 
     # Assignee filters
     team: Optional[str] = typer.Option(None, help="Owner/team id (owner_id)"),
@@ -56,6 +64,7 @@ def fetch(
 ):
     """
     Fetch incidents (export) and save to data/raw.
+    Supports multiple --status values by looping over the API when type=json.
     """
     try:
         ensure_dirs()
@@ -66,9 +75,40 @@ def fetch(
 
         start_iso = start or settings.default_start
         end_iso = end or settings.default_end
-        owner_id = team or settings.team_id  # pode ser None
+        owner_id = team or settings.team_id  # can be None
         assigned_to = assignee or settings.assignee_id
-        status = status or settings.status
+
+        # ------------------------------------------------------------------
+        # Normalize statuses (CLI overrides ENV)
+        # ------------------------------------------------------------------
+        status_list: list[str] = []
+
+        # From CLI: e.g. --status acknowledged --status triggered, or --status ack,trig
+        for item in status or []:
+            for part in item.split(","):
+                part = part.strip()
+                if part:
+                    status_list.append(part)
+
+        # If no CLI, fallback to env settings.status (single or comma-separated string)
+        if not status_list and settings.status:
+            if isinstance(settings.status, str):
+                for part in settings.status.split(","):
+                    p = part.strip()
+                    if p:
+                        status_list.append(p)
+            else:
+                # in case someday Settings.status becomes a list
+                status_list.extend(settings.status)
+
+        # Remove duplicates keeping order
+        seen = set()
+        normalized_status_list: list[str] = []
+        for s in status_list:
+            if s not in seen:
+                seen.add(s)
+                normalized_status_list.append(s)
+        status_list = normalized_status_list
 
         if not start_iso or not end_iso:
             raise typer.BadParameter("Provide --start/--end or set START_TIME/END_TIME in .env")
@@ -76,32 +116,121 @@ def fetch(
         token = get_access_token(settings.refresh_token, settings.auth_url)
         client = SquadcastClient(settings.base_api, token)
 
-        # URL para debug (log amigável, sem realizar chamada extra)
-        dbg_url = (
+        # ------------------------------------------------------------------
+        # Build base URL for debug (without status)
+        # ------------------------------------------------------------------
+        base_url = (
             f"{settings.base_api.rstrip('/')}/incidents/export?type={export_type}"
             f"&start_time={start_iso}&end_time={end_iso}"
         )
         if owner_id:
-            dbg_url += f"&owner_id={owner_id}"
+            base_url += f"&owner_id={owner_id}"
         if assigned_to:
-            dbg_url += f"&assigned_to={assigned_to}"
+            base_url += f"&assigned_to={assigned_to}"
         if tags:
-            dbg_url += f"&tags={tags}"
-        if status:
-            dbg_url += f"&status={status}"
-        if debug:
-            typer.secho(f"DEBUG URL: {dbg_url}", fg=typer.colors.YELLOW)
+            base_url += f"&tags={tags}"
 
-        content = client.export_incidents(
-            start_iso, end_iso, owner_id=owner_id, assigned_to=assigned_to, tags=tags, status=status, export_type=export_type
-        )
+        content: bytes
+
+        # ------------------------------------------------------------------
+        # Case 1: zero or one status => single API call
+        # ------------------------------------------------------------------
+        if len(status_list) <= 1:
+            single_status = status_list[0] if status_list else None
+
+            if debug:
+                dbg_url = base_url
+                if single_status:
+                    dbg_url += f"&status={single_status}"
+                typer.secho(f"DEBUG URL: {dbg_url}", fg=typer.colors.YELLOW)
+
+            content = client.export_incidents(
+                start_iso,
+                end_iso,
+                owner_id=owner_id,
+                assigned_to=assigned_to,
+                tags=tags,
+                status=single_status,
+                export_type=export_type,
+            )
+
+        # ------------------------------------------------------------------
+        # Case 2: multiple statuses
+        #   -> only supported for JSON (we loop one request per status)
+        # ------------------------------------------------------------------
+        else:
+            if export_type != "json":
+                raise typer.BadParameter(
+                    "Multiple --status values are only supported with --type json. "
+                    "Use a single --status when using --type csv."
+                )
+
+            if debug:
+                typer.secho(
+                    f"DEBUG base URL (status will vary per request): {base_url}",
+                    fg=typer.colors.YELLOW,
+                )
+                typer.secho(
+                    f"DEBUG statuses (looping): {', '.join(status_list)}",
+                    fg=typer.colors.YELLOW,
+                )
+
+            all_records = []
+
+            for s in status_list:
+                if debug:
+                    typer.secho(f"DEBUG requesting status={s}", fg=typer.colors.BLUE)
+
+                part_content = client.export_incidents(
+                    start_iso,
+                    end_iso,
+                    owner_id=owner_id,
+                    assigned_to=assigned_to,
+                    tags=tags,
+                    status=s,
+                    export_type="json",
+                )
+
+                try:
+                    data = json.loads(part_content)
+                except Exception as e:
+                    raise RuntimeError(f"Failed to parse JSON for status '{s}': {e}")
+
+                # Try to extract list of records in a robust way
+                if isinstance(data, list):
+                    all_records.extend(data)
+                elif isinstance(data, dict):
+                    records = None
+                    if "data" in data and isinstance(data["data"], list):
+                        records = data["data"]
+                    else:
+                        # if dict has only one key and it's a list, consider that as records
+                        if len(data) == 1:
+                            only_val = next(iter(data.values()))
+                            if isinstance(only_val, list):
+                                records = only_val
+                    if records is not None:
+                        all_records.extend(records)
+                    else:
+                        # treat whole dict as a single record
+                        all_records.append(data)
+                else:
+                    # unknown shape, push as-is
+                    all_records.append(data)
+
+            merged = {"data": all_records}
+            content = json.dumps(merged).encode("utf-8")
+
+        # ------------------------------------------------------------------
+        # Save output
+        # ------------------------------------------------------------------
         out = Path("data/raw") / (
             f"incidents_{utc_stamp()}.json" if export_type == "json" else f"incidents_{utc_stamp()}.csv"
         )
         save_bytes(content, out)
         typer.secho(f"Saved: {out}", fg=typer.colors.GREEN)
 
-        # Se JSON, conta registros e avisa
+        # If JSON, count records and show preview
         if export_type == "json":
             try:
                 data = json.loads(content)
@@ -111,7 +240,7 @@ def fetch(
                     preview = str(data)[:400]
                     typer.secho(f"DEBUG preview: {preview}", fg=typer.colors.YELLOW)
                 if n == 0:
-                   ...
+                    typer.secho("No records in response.", fg=typer.colors.BRIGHT_RED)
                 else:
                     typer.secho(f"Records: {n}", fg=typer.colors.CYAN)
             except Exception:
@@ -122,6 +251,7 @@ def fetch(
         _err(str(e))
     except Exception as e:
         _err(f"Fetch failed: {e}")
+
 
 @app.command()
 def analyze(
