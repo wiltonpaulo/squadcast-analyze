@@ -64,7 +64,7 @@ def fetch(
 ):
     """
     Fetch incidents (export) and save to data/raw.
-    Supports multiple --status values by looping over the API when type=json.
+    Supports multiple --status values by looping over the API when type is json or csv.
     """
     try:
         ensure_dirs()
@@ -156,15 +156,9 @@ def fetch(
 
         # ------------------------------------------------------------------
         # Case 2: multiple statuses
-        #   -> only supported for JSON (we loop one request per status)
+        #   -> supported for both JSON and CSV via multiple calls
         # ------------------------------------------------------------------
         else:
-            if export_type != "json":
-                raise typer.BadParameter(
-                    "Multiple --status values are only supported with --type json. "
-                    "Use a single --status when using --type csv."
-                )
-
             if debug:
                 typer.secho(
                     f"DEBUG base URL (status will vary per request): {base_url}",
@@ -175,51 +169,97 @@ def fetch(
                     fg=typer.colors.YELLOW,
                 )
 
-            all_records = []
+            # JSON mode: merge records in a single {"data": [...]} payload
+            if export_type == "json":
+                all_records = []
 
-            for s in status_list:
-                if debug:
-                    typer.secho(f"DEBUG requesting status={s}", fg=typer.colors.BLUE)
+                for s in status_list:
+                    if debug:
+                        typer.secho(f"DEBUG requesting status={s}", fg=typer.colors.BLUE)
 
-                part_content = client.export_incidents(
-                    start_iso,
-                    end_iso,
-                    owner_id=owner_id,
-                    assigned_to=assigned_to,
-                    tags=tags,
-                    status=s,
-                    export_type="json",
-                )
+                    part_content = client.export_incidents(
+                        start_iso,
+                        end_iso,
+                        owner_id=owner_id,
+                        assigned_to=assigned_to,
+                        tags=tags,
+                        status=s,
+                        export_type="json",
+                    )
 
-                try:
-                    data = json.loads(part_content)
-                except Exception as e:
-                    raise RuntimeError(f"Failed to parse JSON for status '{s}': {e}")
+                    try:
+                        data = json.loads(part_content)
+                    except Exception as e:
+                        raise RuntimeError(f"Failed to parse JSON for status '{s}': {e}")
 
-                # Try to extract list of records in a robust way
-                if isinstance(data, list):
-                    all_records.extend(data)
-                elif isinstance(data, dict):
-                    records = None
-                    if "data" in data and isinstance(data["data"], list):
-                        records = data["data"]
+                    if isinstance(data, list):
+                        all_records.extend(data)
+                    elif isinstance(data, dict):
+                        records = None
+                        if "data" in data and isinstance(data["data"], list):
+                            records = data["data"]
+                        else:
+                            if len(data) == 1:
+                                only_val = next(iter(data.values()))
+                                if isinstance(only_val, list):
+                                    records = only_val
+                        if records is not None:
+                            all_records.extend(records)
+                        else:
+                            all_records.append(data)
                     else:
-                        # if dict has only one key and it's a list, consider that as records
-                        if len(data) == 1:
-                            only_val = next(iter(data.values()))
-                            if isinstance(only_val, list):
-                                records = only_val
-                    if records is not None:
-                        all_records.extend(records)
-                    else:
-                        # treat whole dict as a single record
                         all_records.append(data)
-                else:
-                    # unknown shape, push as-is
-                    all_records.append(data)
 
-            merged = {"data": all_records}
-            content = json.dumps(merged).encode("utf-8")
+                merged = {"data": all_records}
+                content = json.dumps(merged).encode("utf-8")
+
+            # CSV mode: keep a single header and merge all rows
+            else:  # export_type == "csv"
+                header: Optional[str] = None
+                rows: list[str] = []
+
+                for s in status_list:
+                    if debug:
+                        typer.secho(f"DEBUG requesting status={s}", fg=typer.colors.BLUE)
+
+                    part_content = client.export_incidents(
+                        start_iso,
+                        end_iso,
+                        owner_id=owner_id,
+                        assigned_to=assigned_to,
+                        tags=tags,
+                        status=s,
+                        export_type="csv",
+                    )
+
+                    # assume UTF-8 CSV
+                    text = part_content.decode("utf-8").strip()
+                    if not text:
+                        continue
+
+                    lines = text.splitlines()
+                    if not lines:
+                        continue
+
+                    if header is None:
+                        # first response: take header + data
+                        header = lines[0]
+                        rows.extend(lines[1:])
+                    else:
+                        # subsequent responses: skip header if it matches
+                        if lines[0] == header:
+                            rows.extend(lines[1:])
+                        else:
+                            # header differs (unexpected) -> be conservative and keep everything
+                            rows.extend(lines)
+
+                if header is None:
+                    # no data at all
+                    content = "".encode("utf-8")
+                else:
+                    merged_csv = "\n".join([header] + rows) + "\n"
+                    content = merged_csv.encode("utf-8")
+
 
         # ------------------------------------------------------------------
         # Save output
