@@ -60,7 +60,7 @@ Create a `.env` file at the project root:
 SQUADCAST_REFRESH_TOKEN=your_refresh_token_here
 SQUADCAST_AUTH_URL=https://auth.squadcast.com/oauth/access-token
 SQUADCAST_BASE_API=https://api.squadcast.com/v3
-SQUADCAST_TEAM_ID=<id>
+SQUADCAST_TEAM_ID=<team_id>
 SQUADCAST_ASSIGNEE_ID=<user_id>
 DEFAULT_START=2025-11-10T00:00:00.000Z
 DEFAULT_END=2025-11-12T23:59:59.999Z
